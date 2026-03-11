@@ -1,346 +1,521 @@
---[[
-    Script Local para Executor
-    1.000.000x RE-ENCOSITE INSTANTÂNEO
-    - SEM click na tela (só movimento da ferramenta)
-    - Re-encoste INSTANTÂNEO (mais rápido possível)
-    - Ignora dash
-    - Para quando alvo morre
-    - Toggle: INSERT
---]]
+-- Script com GUI para efeito de piscar hitbox com quantidade ajustável
+-- Executar no executor
 
-local player = game:GetService("Players").LocalPlayer
-local uis = game:GetService("UserInputService")
-local runService = game:GetService("RunService")
-
--- CONFIGURAÇÕES
-local MULTIPLICADOR = 1000000  -- 1 MILHÃO de hits!
-local VELOCIDADE_REENCOSTE = 0  -- ZERO! Instantâneo!
-
--- Controle
-local ativo = false
-local processandoAtaque = false
-local alvoAtual = nil
-local hitsAplicados = 0
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
 
 -- Criar GUI
-local gui = Instance.new("ScreenGui")
-local texto = Instance.new("TextLabel")
-local progresso = Instance.new("TextLabel")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HitboxPiscarGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-gui.Name = "ReencosteInstantaneo"
-gui.Parent = player:WaitForChild("PlayerGui")
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 9999
+-- Frame principal (aumentei o tamanho para acomodar nova opção)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 280, 0, 220)
+mainFrame.Position = UDim2.new(0, 10, 0, 10)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BackgroundTransparency = 0.2
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
 
--- Texto principal
-texto.Parent = gui
-texto.Size = UDim2.new(0, 450, 0, 70)
-texto.Position = UDim2.new(0.5, -225, 0.82, 0)
-texto.BackgroundColor3 = Color3.new(0, 0, 0)
-texto.BackgroundTransparency = 0.1
-texto.TextColor3 = Color3.new(1, 0, 0)
-texto.Text = "🔴 1M RE-ENCOSITE INSTANTÂNEO: DESATIVADO"
-texto.TextScaled = true
-texto.Font = Enum.Font.GothamBlack
-texto.BorderSizePixel = 3
+-- Título
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+title.BackgroundTransparency = 0.3
+title.BorderSizePixel = 0
+title.Text = "⚡ HITBOX PISCAR ⚡"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
 
--- Barra de progresso
-progresso.Parent = gui
-progresso.Size = UDim2.new(0, 450, 0, 30)
-progresso.Position = UDim2.new(0.5, -225, 0.88, 40)
-progresso.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-progresso.TextColor3 = Color3.new(1, 1, 1)
-progresso.Text = "0/1.000.000 re-encostes"
-progresso.TextScaled = true
-progresso.Font = Enum.Font.SourceSansBold
+-- Status
+local statusText = Instance.new("TextLabel")
+statusText.Name = "Status"
+statusText.Size = UDim2.new(1, -20, 0, 30)
+statusText.Position = UDim2.new(0, 10, 0, 35)
+statusText.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+statusText.BackgroundTransparency = 0.5
+statusText.BorderSizePixel = 0
+statusText.Text = "🟢 ATIVADO"
+statusText.TextColor3 = Color3.fromRGB(0, 255, 0)
+statusText.TextScaled = true
+statusText.Font = Enum.Font.Gotham
+statusText.Parent = mainFrame
 
--- Cantos
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = texto
+-- Label quantidade
+local quantLabel = Instance.new("TextLabel")
+quantLabel.Name = "QuantLabel"
+quantLabel.Size = UDim2.new(0, 100, 0, 25)
+quantLabel.Position = UDim2.new(0, 10, 0, 70)
+quantLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+quantLabel.BackgroundTransparency = 0.3
+quantLabel.BorderSizePixel = 0
+quantLabel.Text = "Piscadas:"
+quantLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+quantLabel.TextScaled = true
+quantLabel.Font = Enum.Font.Gotham
+quantLabel.Parent = mainFrame
 
-local progcorner = Instance.new("UICorner")
-progcorner.CornerRadius = UDim.new(0, 5)
-progcorner.Parent = progresso
+-- Caixa de texto para quantidade
+local quantBox = Instance.new("TextBox")
+quantBox.Name = "QuantBox"
+quantBox.Size = UDim2.new(0, 80, 0, 25)
+quantBox.Position = UDim2.new(0, 110, 0, 70)
+quantBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+quantBox.BackgroundTransparency = 0.2
+quantBox.BorderSizePixel = 0
+quantBox.Text = "50"
+quantBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+quantBox.TextScaled = true
+quantBox.Font = Enum.Font.Gotham
+quantBox.PlaceholderText = "50"
+quantBox.ClearTextOnFocus = false
+quantBox.Parent = mainFrame
 
--- Atualizar GUI
-local function atualizarGUI()
-    if ativo then
-        texto.Text = "🟢 1M RE-ENCOSITE INSTANTÂNEO: ATIVADO"
-        texto.TextColor3 = Color3.new(0, 1, 0)
-        texto.BackgroundColor3 = Color3.new(0, 0.4, 0)
-    else
-        texto.Text = "🔴 1M RE-ENCOSITE INSTANTÂNEO: DESATIVADO"
-        texto.TextColor3 = Color3.new(1, 0, 0)
-        texto.BackgroundColor3 = Color3.new(0.4, 0, 0)
-    end
-end
+-- Label resultado (mostra 100x/seg)
+local resultadoLabel = Instance.new("TextLabel")
+resultadoLabel.Name = "ResultadoLabel"
+resultadoLabel.Size = UDim2.new(0, 80, 0, 20)
+resultadoLabel.Position = UDim2.new(0, 195, 0, 73)
+resultadoLabel.BackgroundTransparency = 1
+resultadoLabel.Text = "(x/seg)"
+resultadoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+resultadoLabel.TextScaled = true
+resultadoLabel.Font = Enum.Font.Gotham
+resultadoLabel.Parent = mainFrame
 
--- Toggle (INSERT)
-local function toggle()
-    ativo = not ativo
-    atualizarGUI()
-    if ativo then
-        print("\n[INSTANT] 🚀 ATIVADO - 1 MILHÃO de re-encostes INSTANTÂNEOS!")
-        print("[INSTANT] ⚡ Velocidade: MÁXIMA (0ms de espera)")
-    else
-        print("[INSTANT] 💤 DESATIVADO")
-    end
-end
+-- Botão toggle
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.new(0, 100, 0, 30)
+toggleBtn.Position = UDim2.new(0, 10, 0, 105)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+toggleBtn.BackgroundTransparency = 0.3
+toggleBtn.BorderSizePixel = 0
+toggleBtn.Text = "DESATIVAR"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.TextScaled = true
+toggleBtn.Font = Enum.Font.Gotham
+toggleBtn.Parent = mainFrame
 
--- Tecla INSERT
-uis.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.Insert then
-        toggle()
-    end
-end)
+-- Botão só espadas
+local espadasCheck = Instance.new("TextButton")
+espadasCheck.Name = "EspadasCheck"
+espadasCheck.Size = UDim2.new(0, 120, 0, 30)
+espadasCheck.Position = UDim2.new(0, 120, 0, 105)
+espadasCheck.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+espadasCheck.BackgroundTransparency = 0.3
+espadasCheck.BorderSizePixel = 0
+espadasCheck.Text = "✓ SÓ ESPADAS"
+espadasCheck.TextColor3 = Color3.fromRGB(255, 255, 255)
+espadasCheck.TextScaled = true
+espadasCheck.Font = Enum.Font.Gotham
+espadasCheck.Parent = mainFrame
 
--- FUNÇÃO DE RE-ENCOSITE INSTANTÂNEO (SEM CLICK NA TELA)
-local function reencosteInstantaneo(ferramenta, alvo, quantidade)
-    local handle = ferramenta:FindFirstChild("Handle")
-    if not handle then return 0 end
+-- Botão fechar
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "CloseBtn"
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 5)
+closeBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+closeBtn.BackgroundTransparency = 0.3
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = mainFrame
+
+-- Variáveis de controle
+local ativo = true
+local soEspadas = true
+local piscando = false
+local handleOriginal = nil
+local tamanhoOriginal = nil
+local quantidadePiscadas = 50 -- Valor padrão
+
+-- Lista de nomes de espadas (pode adicionar mais)
+local nomesEspadas = {
+    "Sword", "Katana", "Saber", "Blade", "Espada", 
+    "Cutlass", "Scimitar", "Rapier", "Claymore", "Longsword",
+    "Dagger", "Knife", "Faca", "Espadinha", "Weapon"
+}
+
+-- Função para verificar se é espada
+function isEspada(tool)
+    if not soEspadas then return true end
     
-    local hitsAplicadosAgora = 0
-    local posOriginal = handle.Position
-    
-    -- Loop INSTANTÂNEO (sem task.wait)
-    for i = 1, quantidade do
-        -- Verificar se alvo morreu
-        if alvoAtual and alvoAtual.Health <= 0 then
-            break
-        end
-        
-        -- Mover PARA DENTRO do alvo (contato físico)
-        handle.CFrame = alvo.HumanoidRootPart.CFrame * CFrame.new(
-            math.random(-3, 3)/10,  -- Variação mínima X
-            math.random(-3, 3)/10,  -- Variação mínima Y
-            -1.3  -- Distância de contato
-        )
-        
-        -- Mover levemente para GERAR NOVO CONTATO (instantâneo)
-        handle.CFrame = alvo.HumanoidRootPart.CFrame * CFrame.new(
-            math.random(-3, 3)/10,
-            math.random(-3, 3)/10,
-            -1.5
-        )
-        
-        hitsAplicadosAgora = hitsAplicadosAgora + 1
-        
-        -- Feedback a cada 100k (usando contador)
-        if hitsAplicadosAgora % 100000 == 0 then
-            progresso.Text = string.format("%d/1.000.000 re-encostes", 
-                hitsAplicados + hitsAplicadosAgora)
-        end
-        
-        -- Forçar execução imediata (sem espera)
-        runService.Heartbeat:Wait()  -- Mínimo possível
-    end
-    
-    return hitsAplicadosAgora
-end
-
--- FUNÇÃO PRINCIPAL - 1 MILHÃO DE RE-ENCOSTES INSTANTÂNEOS
-local function executar1MilhaoReencoste(ferramenta, inimigo)
-    if not ativo then return end
-    
-    local humanoide = inimigo:FindFirstChildWhichIsA("Humanoid")
-    if not humanoide then return end
-    
-    alvoAtual = humanoide
-    hitsAplicados = 0
-    local tempoInicial = tick()
-    local loteAtual = 1
-    
-    print("\n[INSTANT] 🎯 ATACANDO: " .. tostring(inimigo.Name))
-    print("[INSTANT] ❤️ Vida inicial: " .. math.floor(humanoide.Health))
-    print("[INSTANT] ⚡ Aplicando 1 MILHÃO de re-encostes INSTANTÂNEOS...")
-    
-    -- Dividir em lotes para não travar o jogo
-    local LOTE = 10000  -- 10k re-encostes por lote
-    
-    while ativo and humanoide.Health > 0 and hitsAplicados < MULTIPLICADOR do
-        -- Calcular quanto falta
-        local restante = MULTIPLICADOR - hitsAplicados
-        local tamanhoLote = math.min(LOTE, restante)
-        
-        -- Aplicar lote INSTANTÂNEO
-        local hitsNoLote = reencosteInstantaneo(ferramenta, inimigo, tamanhoLote)
-        hitsAplicados = hitsAplicados + hitsNoLote
-        
-        -- Estatísticas a cada lote
-        local tempoPassado = tick() - tempoInicial
-        local hitsPorSegundo = math.floor(hitsAplicados / tempoPassado)
-        local percentual = (hitsAplicados / MULTIPLICADOR) * 100
-        
-        print(string.format("[INSTANT] 📊 Lote %d: %d/1.000.000 (%.1f%%) - %d hits/s - Vida: %.1f", 
-            loteAtual, hitsAplicados, percentual, hitsPorSegundo, humanoide.Health))
-        
-        loteAtual = loteAtual + 1
-        
-        -- Se morreu, para
-        if humanoide.Health <= 0 then
-            print("\n[INSTANT] ✅ ALVO MORTO!")
-            print("[INSTANT] 📊 Re-encostes aplicados: " .. hitsAplicados .. "/1.000.000")
-            print("[INSTANT] ⏱️ Tempo total: " .. (tick() - tempoInicial) .. "s")
-            print("[INSTANT] ⚡ Média: " .. math.floor(hitsAplicados / (tick() - tempoInicial)) .. " re-encostes/s")
-            break
-        end
-        
-        -- Pequena pausa entre lotes para não crashar
-        task.wait(0.001)
-    end
-    
-    -- Se completou 1 milhão mas não morreu
-    if humanoide.Health > 0 and hitsAplicados >= MULTIPLICADOR then
-        print("\n[INSTANT] ⚠️ 1 MILHÃO de re-encostes aplicados!")
-        print("[INSTANT] ❤️ Vida restante: " .. math.floor(humanoide.Health))
-        
-        -- Continuar até morrer (agora sem limite)
-        print("[INSTANT] 🔄 Continuando até morrer...")
-        
-        while ativo and humanoide.Health > 0 do
-            reencosteInstantaneo(ferramenta, inimigo, 10000)
-            hitsAplicados = hitsAplicados + 10000
-            
-            if hitsAplicados % 100000 == 0 then
-                print(string.format("[INSTANT] 📊 %d re-encostes totais - Vida: %.1f", 
-                    hitsAplicados, humanoide.Health))
-            end
-            
-            task.wait(0.001)
-        end
-        
-        print("[INSTANT] ✅ Alvo morto após " .. hitsAplicados .. " re-encostes!")
-    end
-    
-    progresso.Text = "0/1.000.000 re-encostes"
-    alvoAtual = nil
-end
-
--- DETECTOR DE DASH
-local dashDetectado = false
-local dashTimer = 0
-
-local function detectarDash()
-    if player.Character and player.Character:FindFirstChild("Humanoid") then
-        local humanoid = player.Character.Humanoid
-        local velocidade = humanoid.MoveDirection.Magnitude * humanoid.WalkSpeed
-        
-        if velocidade > humanoid.WalkSpeed * 1.8 then
-            dashDetectado = true
-            dashTimer = tick()
+    local nome = tool.Name:lower()
+    for _, espada in ipairs(nomesEspadas) do
+        if nome:find(espada:lower()) then
             return true
         end
     end
     
-    if dashDetectado and tick() - dashTimer > 0.5 then
-        dashDetectado = false
-    end
-    
-    return dashDetectado
-end
-
--- HOOKAR TOUCHED (detectar contato inicial)
-local function hookarTouched(parte, ferramenta)
-    if not parte then return end
-    
-    parte.Touched:Connect(function(hit)
-        if not ativo then return end
-        if dashDetectado then return end
-        if not hit or not hit.Parent then return end
-        
-        -- Ignorar próprio jogador
-        if hit.Parent == player.Character or hit.Parent:IsDescendantOf(player.Character) then
-            return
-        end
-        
-        -- Verificar se é inimigo
-        local humanoide = hit.Parent:FindFirstChildWhichIsA("Humanoid")
-        if not humanoide and hit.Parent.Parent then
-            humanoide = hit.Parent.Parent:FindFirstChildWhichIsA("Humanoid")
-        end
-        
-        if humanoide and humanoide.Health > 0 and not processandoAtaque then
-            processandoAtaque = true
-            
-            local modeloInimigo = hit.Parent
-            if not modeloInimigo:FindFirstChild("HumanoidRootPart") then
-                modeloInimigo = hit.Parent.Parent
-            end
-            
-            print("[INSTANT] 🎯 CONTATO INICIAL DETECTADO!")
-            
-            -- Executar 1 MILHÃO de re-encostes INSTANTÂNEOS
-            task.spawn(function()
-                executar1MilhaoReencoste(ferramenta, modeloInimigo)
-                processandoAtaque = false
-            end)
-        end
-    end)
-end
-
--- Processar ferramentas
-local function processarFerramenta(tool)
-    if not tool:IsA("Tool") then return end
-    
-    local handle = tool:FindFirstChild("Handle")
+    -- Verificar pelo formato/handle
+    local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("Part")
     if handle then
-        hookarTouched(handle, tool)
-        print("[INSTANT] 🔗 Ferramenta hookada:", tool.Name)
-    end
-end
-
--- Conectar tudo
-local function conectarTudo()
-    if player.Character then
-        for _, tool in ipairs(player.Character:GetChildren()) do
-            if tool:IsA("Tool") then
-                task.wait(0.1)
-                processarFerramenta(tool)
-            end
+        -- Espadas geralmente tem handle alongado
+        if handle.Size.Y > handle.Size.X * 1.5 and handle.Size.Y > handle.Size.Z * 1.5 then
+            return true
         end
-        
-        player.Character.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then
-                task.wait(0.1)
-                processarFerramenta(child)
-            end
-        end)
     end
     
-    player.CharacterAdded:Connect(function(char)
-        task.wait(1)
-        for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") then
-                task.wait(0.1)
-                processarFerramenta(tool)
-            end
-        end
-        
-        char.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then
-                task.wait(0.1)
-                processarFerramenta(child)
-            end
-        end)
-    end)
+    return false
 end
 
--- Detector de dash
-runService.Heartbeat:Connect(function()
-    if ativo then
-        detectarDash()
+-- Função para validar quantidade
+function validarQuantidade(valor)
+    local num = tonumber(valor)
+    if num and num > 0 then
+        -- Limitar entre 1 e 500 para evitar problemas
+        if num > 500 then
+            return 500
+        elseif num < 1 then
+            return 1
+        else
+            return math.floor(num) -- Número inteiro
+        end
+    else
+        return 50 -- Valor padrão
+    end
+end
+
+-- Função para piscar hitbox (quantidade ajustável)
+function piscarHitbox(handle)
+    if not handle or not ativo then return end
+    
+    piscando = true
+    tamanhoOriginal = handle.Size
+    
+    -- Calcular tempo entre piscadas para 100x por segundo
+    -- Se queremos 100 piscadas/segundo, cada ciclo leva 0.01 segundos
+    -- Mas como temos 2 mudanças por ciclo (sumir/aparecer), cada espera é 0.005 segundos
+    local tempoEspera = 0.005 -- 5ms (200 frames por segundo aproximado)
+    
+    -- Piscar quantidade vezes (cada ciclo = sumir + aparecer)
+    for i = 1, quantidadePiscadas do
+        if not ativo or not handle or not handle.Parent then 
+            piscando = false
+            return 
+        end
+        
+        -- Sumir (tamanho 0.01)
+        handle.Size = Vector3.new(0.01, 0.01, 0.01)
+        RunService.Heartbeat:Wait() -- Espera 1 frame (~0.005-0.016 segundos)
+        
+        -- Aparecer 100x maior
+        if not ativo or not handle or not handle.Parent then 
+            piscando = false
+            return 
+        end
+        handle.Size = tamanhoOriginal * 100
+        RunService.Heartbeat:Wait() -- Espera 1 frame
+    end
+    
+    -- Restaurar tamanho original
+    if handle and handle.Parent then
+        handle.Size = tamanhoOriginal
+    end
+    
+    piscando = false
+end
+
+-- Detectar clique do mouse
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not ativo then return end
+    if piscando then return end
+    
+    -- Verificar se é clique do mouse (botão esquerdo)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        -- Verificar se tem tool na mão
+        local character = LocalPlayer.Character
+        if character then
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                -- Verificar se é espada (se a opção estiver ativa)
+                if isEspada(tool) then
+                    local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("Part")
+                    if handle then
+                        -- Validar quantidade atual
+                        quantidadePiscadas = validarQuantidade(quantBox.Text)
+                        quantBox.Text = tostring(quantidadePiscadas)
+                        
+                        statusText.Text = string.format("⚡ PISCANDO %dx ⚡", quantidadePiscadas)
+                        statusText.TextColor3 = Color3.fromRGB(255, 255, 0)
+                        
+                        -- Piscar hitbox
+                        coroutine.wrap(piscarHitbox)(handle)
+                    end
+                else
+                    statusText.Text = "⛔ NÃO É ESPADA ⛔"
+                    statusText.TextColor3 = Color3.fromRGB(255, 0, 0)
+                    wait(0.5)
+                    statusText.Text = "🟢 ATIVADO"
+                    statusText.TextColor3 = Color3.fromRGB(0, 255, 0)
+                end
+            end
+        end
     end
 end)
 
--- Iniciar
-conectarTudo()
-atualizarGUI()
+-- Evento quando a caixa de texto perde foco (Enter ou clicar fora)
+quantBox.FocusLost:Connect(function(enterPressed)
+    local valor = validarQuantidade(quantBox.Text)
+    quantBox.Text = tostring(valor)
+    quantidadePiscadas = valor
+end)
 
-print("\n=== 1 MILHÃO DE RE-ENCOSTES INSTANTÂNEOS ===")
-print("📌 Pressione INSERT para ATIVAR")
-print("⚡ RE-ENCOSITE INSTANTÂNEO - SEM CLICK NA TELA")
-print("🎯 Só mexe a ferramenta (100% silencioso)")
-print("🚀 Velocidade: MÁXIMA (0ms entre movimentos)")
-print("💀 Para automaticamente quando morre")
+-- Toggle botão
+toggleBtn.MouseButton1Click:Connect(function()
+    ativo = not ativo
+    if ativo then
+        toggleBtn.Text = "DESATIVAR"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        statusText.Text = "🟢 ATIVADO"
+        statusText.TextColor3 = Color3.fromRGB(0, 255, 0)
+    else
+        toggleBtn.Text = "ATIVAR"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        statusText.Text = "🔴 DESATIVADO"
+        statusText.TextColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end)
+
+-- Botão só espadas
+espadasCheck.MouseButton1Click:Connect(function()
+    soEspadas = not soEspadas
+    if soEspadas then
+        espadasCheck.Text = "✓ SÓ ESPADAS"
+        espadasCheck.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    else
+        espadasCheck.Text = "✗ TODAS TOOLS"
+        espadasCheck.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+    end
+end)
+
+-- Fechar GUI
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Manter GUI sempre visível
+screenGui.DisplayOrder = 999
+
+print("🚀 GUI Hitbox Piscar (Quantidade Ajustável) carregada!")
+print("Clique com o mouse para ativar o efeito")
+print("Digite a quantidade desejada na caixa de texto (1-500)")
+
+
+--[[
+    SCRIPT: AUTO CLICK REAL
+    - Cliques REAIS que o jogo reconhece
+    - Simula clique do jogador
+    - Toggle: HOME
+--]]
+
+local uis = game:GetService("UserInputService")
+local player = game:GetService("Players").LocalPlayer
+local mouse = player:GetMouse()
+
+-- CONFIGURAÇÕES
+local CLICKS_POR_SEGUNDO = 1000  -- 1000 clicks/s (realista)
+local INTERVALO = 1 / CLICKS_POR_SEGUNDO
+
+-- Controle
+local autoClickAtivo = false
+local totalClicks = 0
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+local texto = Instance.new("TextLabel")
+
+gui.Name = "AutoClickReal"
+gui.Parent = player:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 9999
+gui.IgnoreGuiInset = true
+
+texto.Parent = gui
+texto.Size = UDim2.new(0, 300, 0, 50)
+texto.Position = UDim2.new(0.5, -150, 0.90, 0)
+texto.BackgroundColor3 = Color3.new(0, 0, 0)
+texto.BackgroundTransparency = 0.2
+texto.TextColor3 = Color3.new(1, 0, 0)
+texto.Text = "🔴 AUTO CLICK REAL: DESATIVADO"
+texto.TextScaled = true
+texto.Font = Enum.Font.GothamBlack
+texto.BorderSizePixel = 2
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = texto
+
+-- Toggle
+local function toggle()
+    autoClickAtivo = not autoClickAtivo
+    if autoClickAtivo then
+        texto.Text = "🟢 AUTO CLICK REAL: ATIVADO"
+        texto.TextColor3 = Color3.new(0, 1, 0)
+        texto.BackgroundColor3 = Color3.new(0, 0.4, 0)
+        print("\n[CLICK] 🚀 AUTO CLICK REAL ATIVADO")
+    else
+        texto.Text = "🔴 AUTO CLICK REAL: DESATIVADO"
+        texto.TextColor3 = Color3.new(1, 0, 0)
+        texto.BackgroundColor3 = Color3.new(0.4, 0, 0)
+        print("[CLICK] 💤 DESATIVADO - Total clicks: "..totalClicks)
+    end
+end
+
+-- Tecla HOME
+uis.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Home then
+        toggle()
+    end
+end)
+
+-- MÉTODO 1: Mouse1Click (NATIVO DO ROBLOX - MAIS REAL)
+local function clickReal1()
+    local success = pcall(function()
+        -- Simula clique REAL do mouse
+        mouse1click()
+    end)
+    return success
+end
+
+-- MÉTODO 2: Mouse1Press + Release
+local function clickReal2()
+    local success = pcall(function()
+        mouse1press()
+        task.wait(0.0001)
+        mouse1release()
+    end)
+    return success
+end
+
+-- MÉTODO 3: Button1Down/Up via mouse
+local function clickReal3()
+    local success = pcall(function()
+        mouse.Button1Down:Fire()
+        mouse.Button1Up:Fire()
+    end)
+    return success
+end
+
+-- MÉTODO 4: Simular InputBegan/Ended
+local function clickReal4()
+    local success = pcall(function()
+        -- Simula evento de input do jogador
+        local inputService = game:GetService("UserInputService")
+        
+        local inputBegin = {
+            UserInputType = Enum.UserInputType.MouseButton1,
+            Position = mouse.Hit.Position,
+            KeyCode = Enum.KeyCode.Unknown
+        }
+        
+        local inputEnd = {
+            UserInputType = Enum.UserInputType.MouseButton1,
+            Position = mouse.Hit.Position,
+            KeyCode = Enum.KeyCode.Unknown
+        }
+        
+        inputService.InputBegan:Fire(inputBegin, false)
+        inputService.InputEnded:Fire(inputEnd, false)
+    end)
+    return success
+end
+
+-- Lista de métodos REAIS
+local metodosReais = {
+    {nome = "Mouse1Click", func = clickReal1},
+    {nome = "Mouse1Press/Release", func = clickReal2},
+    {nome = "Button1 Events", func = clickReal3},
+    {nome = "Input Simulation", func = clickReal4}
+}
+
+-- Loop principal
+local function iniciarAutoClick()
+    task.spawn(function()
+        local tempoInicial = tick()
+        local clicksNoPeriodo = 0
+        local metodoFuncional = 1
+        
+        while autoClickAtivo do
+            local clickExecutado = false
+            
+            -- Tenta cada método até funcionar
+            for i, metodo in ipairs(metodosReais) do
+                if autoClickAtivo then
+                    local sucesso = pcall(metodo.func)
+                    if sucesso then
+                        clickExecutado = true
+                        metodoFuncional = i
+                        break
+                    end
+                end
+            end
+            
+            if clickExecutado then
+                totalClicks = totalClicks + 1
+                clicksNoPeriodo = clicksNoPeriodo + 1
+            end
+            
+            -- Estatísticas a cada segundo
+            if tick() - tempoInicial >= 1 then
+                print(string.format("[CLICK] 📊 %d clicks/s - Total: %d (método: %s)", 
+                    clicksNoPeriodo, 
+                    totalClicks, 
+                    metodosReais[metodoFuncional].nome
+                ))
+                
+                texto.Text = string.format("🟢 %d clicks/s", clicksNoPeriodo)
+                
+                clicksNoPeriodo = 0
+                tempoInicial = tick()
+            end
+            
+            -- Controle de velocidade
+            task.wait(INTERVALO)
+        end
+    end)
+end
+
+-- Iniciar quando ativar
+local toggleOriginal = toggle
+toggle = function()
+    toggleOriginal()
+    if autoClickAtivo then
+        iniciarAutoClick()
+    end
+end
+
+-- Testar métodos
+print("\n[CLICK] 🔍 Testando métodos de clique REAL...")
+for i, metodo in ipairs(metodosReais) do
+    local funcionou = pcall(metodo.func)
+    if funcionou then
+        print("[CLICK] ✅ "..metodo.nome..": FUNCIONAL")
+    else
+        print("[CLICK] ❌ "..metodo.nome..": FALHOU")
+    end
+    task.wait(0.1)
+end
+
+print("\n=== AUTO CLICK REAL CARREGADO ===")
+print("📌 Pressione HOME para ATIVAR")
+print("⚡ Cliques REAIS que o jogo reconhece")
+print("🎯 4 métodos diferentes")
