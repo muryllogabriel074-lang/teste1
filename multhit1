@@ -1,160 +1,346 @@
-local ls = Instance.new("LocalScript")
-ls.Name = "MultiHitScript"
-ls.Source = [[
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local DAMAGE_MULTIPLIER = 4
-local TOGGLE_KEY = Enum.KeyCode.N
-local HIT_WINDOW = 0.4
-local multiHitEnabled = false
-local hitConnections = {}
-local alreadyHit = {}
+--[[
+    Script Local para Executor
+    1.000.000x RE-ENCOSITE INSTANTÂNEO
+    - SEM click na tela (só movimento da ferramenta)
+    - Re-encoste INSTANTÂNEO (mais rápido possível)
+    - Ignora dash
+    - Para quando alvo morre
+    - Toggle: INSERT
+--]]
 
--- Remove GUI antiga
-if player.PlayerGui:FindFirstChild("MultiHitGUI") then
-    player.PlayerGui:FindFirstChild("MultiHitGUI"):Destroy()
-end
+local player = game:GetService("Players").LocalPlayer
+local uis = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "MultiHitGUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player.PlayerGui
+-- CONFIGURAÇÕES
+local MULTIPLICADOR = 1000000  -- 1 MILHÃO de hits!
+local VELOCIDADE_REENCOSTE = 0  -- ZERO! Instantâneo!
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 230, 0, 60)
-frame.Position = UDim2.new(0.5, -115, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+-- Controle
+local ativo = false
+local processandoAtaque = false
+local alvoAtual = nil
+local hitsAplicados = 0
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(255, 50, 50)
-stroke.Thickness = 2
-stroke.Parent = frame
+-- Criar GUI
+local gui = Instance.new("ScreenGui")
+local texto = Instance.new("TextLabel")
+local progresso = Instance.new("TextLabel")
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.45, 0)
-titleLabel.Position = UDim2.new(0, 0, 0.05, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚔️  MULTI-HIT  x4"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Parent = frame
+gui.Name = "ReencosteInstantaneo"
+gui.Parent = player:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 9999
 
-local toggleLabel = Instance.new("TextLabel")
-toggleLabel.Size = UDim2.new(1, 0, 0.45, 0)
-toggleLabel.Position = UDim2.new(0, 0, 0.52, 0)
-toggleLabel.BackgroundTransparency = 1
-toggleLabel.Text = "● DESATIVADO  [N]"
-toggleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-toggleLabel.TextScaled = true
-toggleLabel.Font = Enum.Font.Gotham
-toggleLabel.Parent = frame
+-- Texto principal
+texto.Parent = gui
+texto.Size = UDim2.new(0, 450, 0, 70)
+texto.Position = UDim2.new(0.5, -225, 0.82, 0)
+texto.BackgroundColor3 = Color3.new(0, 0, 0)
+texto.BackgroundTransparency = 0.1
+texto.TextColor3 = Color3.new(1, 0, 0)
+texto.Text = "🔴 1M RE-ENCOSITE INSTANTÂNEO: DESATIVADO"
+texto.TextScaled = true
+texto.Font = Enum.Font.GothamBlack
+texto.BorderSizePixel = 3
 
-local function updateGUI()
-    if multiHitEnabled then
-        toggleLabel.Text = "● ATIVADO  [N]"
-        toggleLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
-        stroke.Color = Color3.fromRGB(80, 255, 120)
+-- Barra de progresso
+progresso.Parent = gui
+progresso.Size = UDim2.new(0, 450, 0, 30)
+progresso.Position = UDim2.new(0.5, -225, 0.88, 40)
+progresso.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+progresso.TextColor3 = Color3.new(1, 1, 1)
+progresso.Text = "0/1.000.000 re-encostes"
+progresso.TextScaled = true
+progresso.Font = Enum.Font.SourceSansBold
+
+-- Cantos
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = texto
+
+local progcorner = Instance.new("UICorner")
+progcorner.CornerRadius = UDim.new(0, 5)
+progcorner.Parent = progresso
+
+-- Atualizar GUI
+local function atualizarGUI()
+    if ativo then
+        texto.Text = "🟢 1M RE-ENCOSITE INSTANTÂNEO: ATIVADO"
+        texto.TextColor3 = Color3.new(0, 1, 0)
+        texto.BackgroundColor3 = Color3.new(0, 0.4, 0)
     else
-        toggleLabel.Text = "● DESATIVADO  [N]"
-        toggleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-        stroke.Color = Color3.fromRGB(255, 50, 50)
+        texto.Text = "🔴 1M RE-ENCOSITE INSTANTÂNEO: DESATIVADO"
+        texto.TextColor3 = Color3.new(1, 0, 0)
+        texto.BackgroundColor3 = Color3.new(0.4, 0, 0)
     end
 end
 
-local function getToolDamage(tool)
-    if tool:FindFirstChild("Damage") then return tool.Damage.Value end
-    if tool:GetAttribute("Damage") then return tool:GetAttribute("Damage") end
-    for _, child in pairs(tool:GetDescendants()) do
-        if child.Name == "Damage" and (child:IsA("NumberValue") or child:IsA("IntValue")) then
-            return child.Value
+-- Toggle (INSERT)
+local function toggle()
+    ativo = not ativo
+    atualizarGUI()
+    if ativo then
+        print("\n[INSTANT] 🚀 ATIVADO - 1 MILHÃO de re-encostes INSTANTÂNEOS!")
+        print("[INSTANT] ⚡ Velocidade: MÁXIMA (0ms de espera)")
+    else
+        print("[INSTANT] 💤 DESATIVADO")
+    end
+end
+
+-- Tecla INSERT
+uis.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        toggle()
+    end
+end)
+
+-- FUNÇÃO DE RE-ENCOSITE INSTANTÂNEO (SEM CLICK NA TELA)
+local function reencosteInstantaneo(ferramenta, alvo, quantidade)
+    local handle = ferramenta:FindFirstChild("Handle")
+    if not handle then return 0 end
+    
+    local hitsAplicadosAgora = 0
+    local posOriginal = handle.Position
+    
+    -- Loop INSTANTÂNEO (sem task.wait)
+    for i = 1, quantidade do
+        -- Verificar se alvo morreu
+        if alvoAtual and alvoAtual.Health <= 0 then
+            break
+        end
+        
+        -- Mover PARA DENTRO do alvo (contato físico)
+        handle.CFrame = alvo.HumanoidRootPart.CFrame * CFrame.new(
+            math.random(-3, 3)/10,  -- Variação mínima X
+            math.random(-3, 3)/10,  -- Variação mínima Y
+            -1.3  -- Distância de contato
+        )
+        
+        -- Mover levemente para GERAR NOVO CONTATO (instantâneo)
+        handle.CFrame = alvo.HumanoidRootPart.CFrame * CFrame.new(
+            math.random(-3, 3)/10,
+            math.random(-3, 3)/10,
+            -1.5
+        )
+        
+        hitsAplicadosAgora = hitsAplicadosAgora + 1
+        
+        -- Feedback a cada 100k (usando contador)
+        if hitsAplicadosAgora % 100000 == 0 then
+            progresso.Text = string.format("%d/1.000.000 re-encostes", 
+                hitsAplicados + hitsAplicadosAgora)
+        end
+        
+        -- Forçar execução imediata (sem espera)
+        runService.Heartbeat:Wait()  -- Mínimo possível
+    end
+    
+    return hitsAplicadosAgora
+end
+
+-- FUNÇÃO PRINCIPAL - 1 MILHÃO DE RE-ENCOSTES INSTANTÂNEOS
+local function executar1MilhaoReencoste(ferramenta, inimigo)
+    if not ativo then return end
+    
+    local humanoide = inimigo:FindFirstChildWhichIsA("Humanoid")
+    if not humanoide then return end
+    
+    alvoAtual = humanoide
+    hitsAplicados = 0
+    local tempoInicial = tick()
+    local loteAtual = 1
+    
+    print("\n[INSTANT] 🎯 ATACANDO: " .. tostring(inimigo.Name))
+    print("[INSTANT] ❤️ Vida inicial: " .. math.floor(humanoide.Health))
+    print("[INSTANT] ⚡ Aplicando 1 MILHÃO de re-encostes INSTANTÂNEOS...")
+    
+    -- Dividir em lotes para não travar o jogo
+    local LOTE = 10000  -- 10k re-encostes por lote
+    
+    while ativo and humanoide.Health > 0 and hitsAplicados < MULTIPLICADOR do
+        -- Calcular quanto falta
+        local restante = MULTIPLICADOR - hitsAplicados
+        local tamanhoLote = math.min(LOTE, restante)
+        
+        -- Aplicar lote INSTANTÂNEO
+        local hitsNoLote = reencosteInstantaneo(ferramenta, inimigo, tamanhoLote)
+        hitsAplicados = hitsAplicados + hitsNoLote
+        
+        -- Estatísticas a cada lote
+        local tempoPassado = tick() - tempoInicial
+        local hitsPorSegundo = math.floor(hitsAplicados / tempoPassado)
+        local percentual = (hitsAplicados / MULTIPLICADOR) * 100
+        
+        print(string.format("[INSTANT] 📊 Lote %d: %d/1.000.000 (%.1f%%) - %d hits/s - Vida: %.1f", 
+            loteAtual, hitsAplicados, percentual, hitsPorSegundo, humanoide.Health))
+        
+        loteAtual = loteAtual + 1
+        
+        -- Se morreu, para
+        if humanoide.Health <= 0 then
+            print("\n[INSTANT] ✅ ALVO MORTO!")
+            print("[INSTANT] 📊 Re-encostes aplicados: " .. hitsAplicados .. "/1.000.000")
+            print("[INSTANT] ⏱️ Tempo total: " .. (tick() - tempoInicial) .. "s")
+            print("[INSTANT] ⚡ Média: " .. math.floor(hitsAplicados / (tick() - tempoInicial)) .. " re-encostes/s")
+            break
+        end
+        
+        -- Pequena pausa entre lotes para não crashar
+        task.wait(0.001)
+    end
+    
+    -- Se completou 1 milhão mas não morreu
+    if humanoide.Health > 0 and hitsAplicados >= MULTIPLICADOR then
+        print("\n[INSTANT] ⚠️ 1 MILHÃO de re-encostes aplicados!")
+        print("[INSTANT] ❤️ Vida restante: " .. math.floor(humanoide.Health))
+        
+        -- Continuar até morrer (agora sem limite)
+        print("[INSTANT] 🔄 Continuando até morrer...")
+        
+        while ativo and humanoide.Health > 0 do
+            reencosteInstantaneo(ferramenta, inimigo, 10000)
+            hitsAplicados = hitsAplicados + 10000
+            
+            if hitsAplicados % 100000 == 0 then
+                print(string.format("[INSTANT] 📊 %d re-encostes totais - Vida: %.1f", 
+                    hitsAplicados, humanoide.Health))
+            end
+            
+            task.wait(0.001)
+        end
+        
+        print("[INSTANT] ✅ Alvo morto após " .. hitsAplicados .. " re-encostes!")
+    end
+    
+    progresso.Text = "0/1.000.000 re-encostes"
+    alvoAtual = nil
+end
+
+-- DETECTOR DE DASH
+local dashDetectado = false
+local dashTimer = 0
+
+local function detectarDash()
+    if player.Character and player.Character:FindFirstChild("Humanoid") then
+        local humanoid = player.Character.Humanoid
+        local velocidade = humanoid.MoveDirection.Magnitude * humanoid.WalkSpeed
+        
+        if velocidade > humanoid.WalkSpeed * 1.8 then
+            dashDetectado = true
+            dashTimer = tick()
+            return true
         end
     end
-    print("[MultiHit] ⚠️ Dano não encontrado, usando 25")
-    return 25
+    
+    if dashDetectado and tick() - dashTimer > 0.5 then
+        dashDetectado = false
+    end
+    
+    return dashDetectado
 end
 
-local function openHitWindow(tool)
-    if not multiHitEnabled then return end
-    alreadyHit = {}
-    for _, conn in pairs(hitConnections) do conn:Disconnect() end
-    hitConnections = {}
-    local finalDamage = getToolDamage(tool) * DAMAGE_MULTIPLIER
-    print("[MultiHit] 🗡️ Swing! Dano final: " .. finalDamage)
-    for _, part in pairs(tool:GetDescendants()) do
-        if part:IsA("BasePart") then
-            local conn = part.Touched:Connect(function(hit)
-                local targetChar = hit:FindFirstAncestorWhichIsA("Model")
-                if not targetChar or targetChar == character then return end
-                if alreadyHit[targetChar] then return end
-                local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-                if not targetHumanoid or targetHumanoid.Health <= 0 then return end
-                alreadyHit[targetChar] = true
-                targetHumanoid:TakeDamage(finalDamage)
-                print("[MultiHit] 💥 Acertou: " .. targetChar.Name .. " | -" .. finalDamage)
+-- HOOKAR TOUCHED (detectar contato inicial)
+local function hookarTouched(parte, ferramenta)
+    if not parte then return end
+    
+    parte.Touched:Connect(function(hit)
+        if not ativo then return end
+        if dashDetectado then return end
+        if not hit or not hit.Parent then return end
+        
+        -- Ignorar próprio jogador
+        if hit.Parent == player.Character or hit.Parent:IsDescendantOf(player.Character) then
+            return
+        end
+        
+        -- Verificar se é inimigo
+        local humanoide = hit.Parent:FindFirstChildWhichIsA("Humanoid")
+        if not humanoide and hit.Parent.Parent then
+            humanoide = hit.Parent.Parent:FindFirstChildWhichIsA("Humanoid")
+        end
+        
+        if humanoide and humanoide.Health > 0 and not processandoAtaque then
+            processandoAtaque = true
+            
+            local modeloInimigo = hit.Parent
+            if not modeloInimigo:FindFirstChild("HumanoidRootPart") then
+                modeloInimigo = hit.Parent.Parent
+            end
+            
+            print("[INSTANT] 🎯 CONTATO INICIAL DETECTADO!")
+            
+            -- Executar 1 MILHÃO de re-encostes INSTANTÂNEOS
+            task.spawn(function()
+                executar1MilhaoReencoste(ferramenta, modeloInimigo)
+                processandoAtaque = false
             end)
-            table.insert(hitConnections, conn)
         end
-    end
-    task.delay(HIT_WINDOW, function()
-        for _, conn in pairs(hitConnections) do conn:Disconnect() end
-        hitConnections = {}
-        alreadyHit = {}
     end)
 end
 
-local toolActivatedConn = nil
-local function watchTool(tool)
-    if toolActivatedConn then toolActivatedConn:Disconnect() end
-    if not tool then return end
-    toolActivatedConn = tool.Activated:Connect(function()
-        openHitWindow(tool)
-    end)
-    print("[MultiHit] 🔧 Tool: " .. tool.Name)
+-- Processar ferramentas
+local function processarFerramenta(tool)
+    if not tool:IsA("Tool") then return end
+    
+    local handle = tool:FindFirstChild("Handle")
+    if handle then
+        hookarTouched(handle, tool)
+        print("[INSTANT] 🔗 Ferramenta hookada:", tool.Name)
+    end
 end
 
-character.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then watchTool(child) end
-end)
-character.ChildRemoved:Connect(function(child)
-    if child:IsA("Tool") then
-        if toolActivatedConn then toolActivatedConn:Disconnect() end
-        for _, conn in pairs(hitConnections) do conn:Disconnect() end
-        hitConnections = {}
+-- Conectar tudo
+local function conectarTudo()
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then
+                task.wait(0.1)
+                processarFerramenta(tool)
+            end
+        end
+        
+        player.Character.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                processarFerramenta(child)
+            end
+        end)
     end
-end)
-for _, child in pairs(character:GetChildren()) do
-    if child:IsA("Tool") then watchTool(child) end
+    
+    player.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                task.wait(0.1)
+                processarFerramenta(tool)
+            end
+        end
+        
+        char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                processarFerramenta(child)
+            end
+        end)
+    end)
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == TOGGLE_KEY then
-        multiHitEnabled = not multiHitEnabled
-        updateGUI()
-        print(multiHitEnabled and "[MultiHit] ✅ ATIVADO" or "[MultiHit] ❌ DESATIVADO")
+-- Detector de dash
+runService.Heartbeat:Connect(function()
+    if ativo then
+        detectarDash()
     end
 end)
 
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    task.wait(1)
-    for _, child in pairs(newChar:GetChildren()) do
-        if child:IsA("Tool") then watchTool(child) end
-    end
-    newChar.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then watchTool(child) end
-    end)
-end)
+-- Iniciar
+conectarTudo()
+atualizarGUI()
 
-print("✅ MultiHit carregado! Pressione N para ativar.")
-updateGUI()
-]]
-
-ls.Parent = game:GetService("Players").LocalPlayer.PlayerGui
-print("✅ LocalScript criado e rodando!")
+print("\n=== 1 MILHÃO DE RE-ENCOSTES INSTANTÂNEOS ===")
+print("📌 Pressione INSERT para ATIVAR")
+print("⚡ RE-ENCOSITE INSTANTÂNEO - SEM CLICK NA TELA")
+print("🎯 Só mexe a ferramenta (100% silencioso)")
+print("🚀 Velocidade: MÁXIMA (0ms entre movimentos)")
+print("💀 Para automaticamente quando morre")
