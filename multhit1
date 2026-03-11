@@ -1,0 +1,160 @@
+local ls = Instance.new("LocalScript")
+ls.Name = "MultiHitScript"
+ls.Source = [[
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local DAMAGE_MULTIPLIER = 4
+local TOGGLE_KEY = Enum.KeyCode.N
+local HIT_WINDOW = 0.4
+local multiHitEnabled = false
+local hitConnections = {}
+local alreadyHit = {}
+
+-- Remove GUI antiga
+if player.PlayerGui:FindFirstChild("MultiHitGUI") then
+    player.PlayerGui:FindFirstChild("MultiHitGUI"):Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MultiHitGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 230, 0, 60)
+frame.Position = UDim2.new(0.5, -115, 0, 20)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 50, 50)
+stroke.Thickness = 2
+stroke.Parent = frame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0.45, 0)
+titleLabel.Position = UDim2.new(0, 0, 0.05, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "⚔️  MULTI-HIT  x4"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = frame
+
+local toggleLabel = Instance.new("TextLabel")
+toggleLabel.Size = UDim2.new(1, 0, 0.45, 0)
+toggleLabel.Position = UDim2.new(0, 0, 0.52, 0)
+toggleLabel.BackgroundTransparency = 1
+toggleLabel.Text = "● DESATIVADO  [N]"
+toggleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+toggleLabel.TextScaled = true
+toggleLabel.Font = Enum.Font.Gotham
+toggleLabel.Parent = frame
+
+local function updateGUI()
+    if multiHitEnabled then
+        toggleLabel.Text = "● ATIVADO  [N]"
+        toggleLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
+        stroke.Color = Color3.fromRGB(80, 255, 120)
+    else
+        toggleLabel.Text = "● DESATIVADO  [N]"
+        toggleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        stroke.Color = Color3.fromRGB(255, 50, 50)
+    end
+end
+
+local function getToolDamage(tool)
+    if tool:FindFirstChild("Damage") then return tool.Damage.Value end
+    if tool:GetAttribute("Damage") then return tool:GetAttribute("Damage") end
+    for _, child in pairs(tool:GetDescendants()) do
+        if child.Name == "Damage" and (child:IsA("NumberValue") or child:IsA("IntValue")) then
+            return child.Value
+        end
+    end
+    print("[MultiHit] ⚠️ Dano não encontrado, usando 25")
+    return 25
+end
+
+local function openHitWindow(tool)
+    if not multiHitEnabled then return end
+    alreadyHit = {}
+    for _, conn in pairs(hitConnections) do conn:Disconnect() end
+    hitConnections = {}
+    local finalDamage = getToolDamage(tool) * DAMAGE_MULTIPLIER
+    print("[MultiHit] 🗡️ Swing! Dano final: " .. finalDamage)
+    for _, part in pairs(tool:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local conn = part.Touched:Connect(function(hit)
+                local targetChar = hit:FindFirstAncestorWhichIsA("Model")
+                if not targetChar or targetChar == character then return end
+                if alreadyHit[targetChar] then return end
+                local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+                if not targetHumanoid or targetHumanoid.Health <= 0 then return end
+                alreadyHit[targetChar] = true
+                targetHumanoid:TakeDamage(finalDamage)
+                print("[MultiHit] 💥 Acertou: " .. targetChar.Name .. " | -" .. finalDamage)
+            end)
+            table.insert(hitConnections, conn)
+        end
+    end
+    task.delay(HIT_WINDOW, function()
+        for _, conn in pairs(hitConnections) do conn:Disconnect() end
+        hitConnections = {}
+        alreadyHit = {}
+    end)
+end
+
+local toolActivatedConn = nil
+local function watchTool(tool)
+    if toolActivatedConn then toolActivatedConn:Disconnect() end
+    if not tool then return end
+    toolActivatedConn = tool.Activated:Connect(function()
+        openHitWindow(tool)
+    end)
+    print("[MultiHit] 🔧 Tool: " .. tool.Name)
+end
+
+character.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then watchTool(child) end
+end)
+character.ChildRemoved:Connect(function(child)
+    if child:IsA("Tool") then
+        if toolActivatedConn then toolActivatedConn:Disconnect() end
+        for _, conn in pairs(hitConnections) do conn:Disconnect() end
+        hitConnections = {}
+    end
+end)
+for _, child in pairs(character:GetChildren()) do
+    if child:IsA("Tool") then watchTool(child) end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == TOGGLE_KEY then
+        multiHitEnabled = not multiHitEnabled
+        updateGUI()
+        print(multiHitEnabled and "[MultiHit] ✅ ATIVADO" or "[MultiHit] ❌ DESATIVADO")
+    end
+end)
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    task.wait(1)
+    for _, child in pairs(newChar:GetChildren()) do
+        if child:IsA("Tool") then watchTool(child) end
+    end
+    newChar.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then watchTool(child) end
+    end)
+end)
+
+print("✅ MultiHit carregado! Pressione N para ativar.")
+updateGUI()
+]]
+
+ls.Parent = game:GetService("Players").LocalPlayer.PlayerGui
+print("✅ LocalScript criado e rodando!")
